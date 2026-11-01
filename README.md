@@ -42,15 +42,62 @@ takes one call at a time, as it does on its own.
 
 ## Quick start
 
+Find two things first:
+
+- **The Kiosk Satellite intercom key:** on any kiosk, **Settings > Intercom > Intercom key** (or the
+  remote admin's Intercom page). Every kiosk has the same one.
+- **The TECHO5 house word:** on a TECHO5 device's setup page, **Sound & Voice > Announcements > House
+  word**. If none is set yet, set one (16 characters or more) on every TECHO5 device: their intercom stays
+  off without it.
+
+Then make a folder with this `docker-compose.yml`, put in the two secrets and the IP address of the
+machine it runs on, and start it:
+
+```yaml
+services:
+  intercom-bridge:
+    image: ghcr.io/josephyancey/intercom-bridge:latest
+    container_name: intercom-bridge
+    network_mode: host          # required: mDNS, and devices connect straight to its ports
+    restart: unless-stopped
+    environment:
+      KS_INTERCOM_KEY: "paste-the-kiosk-intercom-key-here"
+      TECHO5_HOUSE_WORD: "paste-the-techo5-house-word-here"
+      ADVERTISE_ADDRESS: 192.168.1.10   # this machine's IP address
+      # Optional:
+      # MDNS_INTERFACE: eth0            # when the machine has several network interfaces
+      # SILENCE_HANGUP: 15s             # end calls nobody is talking on
+      # NAME_SUFFIX: " (Echo)"          # how TECHO5 devices are named in the kiosks' list
+      # TZ: America/New_York            # timestamps in the log
+    volumes:
+      - ./data:/data                    # keeps each stand-in on the same port across restarts
+```
+
 ```sh
-mkdir intercom-bridge && cd intercom-bridge
-curl -O https://raw.githubusercontent.com/josephyancey/intercom-bridge/main/docker-compose.example.yml
-curl -o .env https://raw.githubusercontent.com/josephyancey/intercom-bridge/main/.env.example
-mv docker-compose.example.yml docker-compose.yml
-# fill in .env: the intercom key, the house word and this machine's IP address
 docker compose up -d
 docker compose logs -f
 ```
+
+To keep the secrets out of the compose file, put them in a file next to it instead, say `bridge.env`:
+
+```sh
+KS_INTERCOM_KEY=paste-the-kiosk-intercom-key-here
+TECHO5_HOUSE_WORD=paste-the-techo5-house-word-here
+ADVERTISE_ADDRESS=192.168.1.10
+```
+
+and replace the `environment:` block with `env_file: bridge.env`. With Docker secrets, the bridge also
+reads `KS_INTERCOM_KEY_FILE` and `TECHO5_HOUSE_WORD_FILE`.
+
+Before starting it, you can check that the machine hears both kinds of device:
+
+```sh
+docker run --rm --network host ghcr.io/josephyancey/intercom-bridge:latest discover
+```
+
+It lists every kiosk and TECHO5 device it can hear in five seconds, without needing the secrets or
+announcing anything. A side missing from the list means mDNS is not reaching this machine; see
+[Networks and VLANs](#networks-and-vlans).
 
 Within a minute the log shows each kiosk and TECHO5 device it found. Open **Call a kiosk** on a kiosk:
 the TECHO5 devices are listed there. On a TECHO5 device, the kiosks are on the call page, and
