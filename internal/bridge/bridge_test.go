@@ -105,6 +105,9 @@ func (k *fakeKiosk) serveEndpoint(w http.ResponseWriter, r *http.Request) {
 		k.lastCall = req
 		status := k.callStatus
 		k.mu.Unlock()
+		if req.Kind == "broadcast" {
+			status = "listening"
+		}
 		k.calls <- req
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": status})
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/intercom/call/"):
@@ -156,15 +159,24 @@ func (k *fakeKiosk) post(url, call string, body any) (int, map[string]any) {
 
 // fakeEcho is a TECHO5 device that answers calls on its web port.
 type fakeEcho struct {
-	srv   *httptest.Server
-	links chan *t5.Link
-	names chan string
-	reply []byte // what it says once called: Ringing, then Answer
+	srv           *httptest.Server
+	links         chan *t5.Link
+	names         chan string
+	reply         []byte // what it says once called: Ringing, then Answer
+	announcements chan t5.Announcement
 }
 
 func newFakeEcho(t *testing.T, reply ...byte) *fakeEcho {
-	e := &fakeEcho{links: make(chan *t5.Link, 2), names: make(chan string, 2), reply: reply}
+	e := &fakeEcho{links: make(chan *t5.Link, 2), names: make(chan string, 2), reply: reply,
+		announcements: make(chan t5.Announcement, 2)}
+	ann := t5.NewAnnouncements(testWord)
 	e.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == t5.AnnouncePath {
+			if m, ok := ann.Receive(w, r); ok {
+				e.announcements <- m
+			}
+			return
+		}
 		l, name, err := t5.Accept(w, r, t5.Key(testWord))
 		if err != nil {
 			return
@@ -348,6 +360,101 @@ func TestSilenceHangsUp(t *testing.T) {
 	}
 	if a := waitFor(t, kiosk.actions, "hangup"); a != "hangup" {
 		t.Fatalf("the kiosk was told %q", a)
+	}
+}
+
+func TestEchoAnnouncesToKiosk(t *testing.T) {
+	b := newTestBridge(t)
+	kiosk := newFakeKiosk(t)
+	echo := newFakeEcho(t)
+	b.SetEchos([]discover.Echo{echo.discovered(t, "Garage Echo")})
+	b.SetKiosks([]discover.Kiosk{kiosk.discovered()})
+	port := standinPort(t, b.Status().Kiosks, "Kitchen")
+
+	// The Echo announces to every device it knows: here, the kiosk's stand-in.
+	voice := frameOf(ks.FrameBytes*2+100, 700) // not a whole number of kiosk frames
+	err := t5.NewAnnouncements(testWord).Send(context.Background(), "127.0.0.1", port,
+		t5.Announcement{From: "Garage Echo", Text: "dinner is ready", Voice: voice})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := waitFor(t, kiosk.calls, "the broadcast")
+	if req.Kind != "broadcast" || req.From.Name != "Garage Echo" {
+		t.Fatalf("the kiosk was called as %+v", req)
+	}
+	ws := waitFor(t, kiosk.sockets, "the audio socket")
+	defer ws.Close()
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var got []byte
+	for {
+		kind, data, err := ws.ReadMessage()
+		if err != nil {
+			t.Fatalf("socket ended before the announcement did: %v", err)
+		}
+		if kind == websocket.BinaryMessage {
+			got = append(got, data...)
+			continue
+		}
+		if strings.Contains(string(data), `"end"`) {
+			break
+		}
+	}
+	if len(got) != ks.FrameBytes*3 || firstSample(got) != 700 {
+		t.Fatalf("the kiosk got %d bytes starting %d", len(got), firstSample(got))
+	}
+	if a := waitFor(t, kiosk.actions, "hangup"); a != "hangup" {
+		t.Fatalf("the kiosk was told %q", a)
+	}
+}
+
+func TestEchoAnnouncementWrongWord(t *testing.T) {
+	b := newTestBridge(t)
+	kiosk := newFakeKiosk(t)
+	b.SetKiosks([]discover.Kiosk{kiosk.discovered()})
+	port := standinPort(t, b.Status().Kiosks, "Kitchen")
+	err := t5.NewAnnouncements("another house").Send(context.Background(), "127.0.0.1", port,
+		t5.Announcement{From: "Stranger", Voice: frameOf(640, 1)})
+	if err == nil {
+		t.Fatal("an announcement with another house word was taken")
+	}
+	select {
+	case <-kiosk.calls:
+		t.Fatal("the kiosk was called anyway")
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestKioskAnnouncesToEcho(t *testing.T) {
+	b := newTestBridge(t)
+	kiosk := newFakeKiosk(t)
+	echo := newFakeEcho(t)
+	b.SetEchos([]discover.Echo{echo.discovered(t, "Garage Echo")})
+	port := standinPort(t, b.Status().Echos, "Garage Echo")
+	_, adminPort := hostPort(t, kiosk.admin.Listener.Addr().String())
+	call := "ann-1"
+	code, out := kiosk.post("http://127.0.0.1:"+strconv.Itoa(port)+"/api/intercom/call", call, map[string]any{
+		"call": call, "kind": "broadcast",
+		"from": map[string]any{"id": kioskID, "name": "Kitchen", "address": "127.0.0.1", "port": adminPort},
+	})
+	if code != http.StatusOK || out["status"] != "listening" {
+		t.Fatalf("broadcast answered %d %v", code, out)
+	}
+	wsURL := url.URL{Scheme: "ws", Host: "127.0.0.1:" + strconv.Itoa(port), Path: "/api/intercom/audio/" + call,
+		RawQuery: url.Values{"token": {kiosk.auth.Token(call, kioskID)}}.Encode()}
+	ws, _, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"type":"talk","on":true}`))
+	for i := 0; i < 3; i++ {
+		_ = ws.WriteMessage(websocket.BinaryMessage, frameOf(ks.FrameBytes, 1200))
+	}
+	_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"type":"end"}`))
+
+	m := waitFor(t, echo.announcements, "the announcement on the Echo")
+	if m.From != "Kitchen" || len(m.Voice) != 3*ks.FrameBytes || firstSample(m.Voice) != 1200 {
+		t.Fatalf("the Echo got %q with %d bytes", m.From, len(m.Voice))
 	}
 }
 

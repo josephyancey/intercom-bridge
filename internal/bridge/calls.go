@@ -75,6 +75,9 @@ type standinCalls struct {
 }
 
 func (c *standinCalls) Ring(req ks.CallRequest, remote string) string {
+	if req.Kind == "broadcast" {
+		return c.b.kioskAnnouncesToEcho(c.t, req)
+	}
 	return c.b.kioskCallsEcho(c.t, req, remote)
 }
 
@@ -136,7 +139,7 @@ func (b *Bridge) kioskCallsEcho(t *echoTwin, req ks.CallRequest, remote string) 
 	}
 	log := b.log.With("way", wayToEcho, "kiosk", caller, "echo", echo.Name, "call", req.Call)
 	if req.Kind != "call" {
-		log.Info("announcement to all turned away: the bridge carries calls only", "kind", req.Kind)
+		log.Info("call of an unknown kind turned away", "kind", req.Kind)
 		return "refused"
 	}
 	host := req.From.Address
@@ -254,8 +257,12 @@ wait:
 
 // serveEchoCall is a request on a kiosk's stand-in TECHO5 device: an Echo calling that kiosk.
 func (b *Bridge) serveEchoCall(t *kioskTwin, w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == t5.AnnouncePath {
+		b.echoAnnounces(t, w, r)
+		return
+	}
 	if r.URL.Path != t5.Path {
-		http.NotFound(w, r) // announcements and the like: not carried
+		http.NotFound(w, r)
 		return
 	}
 	link, caller, err := t5.Accept(w, r, b.t5key)

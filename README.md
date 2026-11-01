@@ -112,10 +112,20 @@ Audio is 16 kHz mono on both sides, so nothing is resampled or encoded. The brid
 80 ms frames into TECHO5's 20 ms frames, paces them, and sends silence when a kiosk is quiet (push to
 talk): a TECHO5 device hangs up on a call that goes silent for 5 seconds. It adds at most 80 ms of delay.
 
+## Announcements
+
+Announcements cross over too. A TECHO5 device's announcement plays on every kiosk as a Kiosk Satellite
+broadcast, with the kiosk's chime. A kiosk's **Announce to all** plays on every TECHO5 device as a TECHO5
+announcement. Each side's own rules apply: a kiosk with *Accept announcements* off or in do not disturb
+turns it away, and a TECHO5 device in quiet hours plays it the way it plays any announcement.
+
 ## Limits
 
-- **Calls only.** A kiosk's *Announce to all* is turned away by the stand-ins, and TECHO5 announcements
-  are not carried to kiosks.
+- **Announcements of words only** (a TECHO5 announcement with text and no recorded voice, like one sent
+  from Home Assistant) are not carried to kiosks: a kiosk broadcast needs a voice to play. Reminders a
+  TECHO5 device shares with the house are not carried either.
+- **A kiosk's *Announce to all* reaches TECHO5 devices once it ends**, not live: TECHO5 plays
+  announcements as recordings, up to 20 seconds.
 - **No intercom encryption on the Kiosk Satellite side.** The TECHO5 side is always encrypted.
 - **One bridge per network.** Two would each make stand-ins of the other's stand-ins.
 - **Drop In:** a TECHO5 device with Drop In on answers by itself only for devices it knows, calling

@@ -80,6 +80,7 @@ type Bridge struct {
 	auth  *ks.Auth
 	ksc   *ks.Client
 	t5key []byte
+	ann   *t5.Announcements
 	log   *slog.Logger
 
 	mu      sync.Mutex
@@ -94,7 +95,7 @@ type Bridge struct {
 func New(cfg Config, log *slog.Logger) *Bridge {
 	auth := ks.NewAuth(cfg.IntercomKey)
 	return &Bridge{
-		cfg: cfg, auth: auth, ksc: ks.NewClient(auth), t5key: t5.Key(cfg.HouseWord), log: log,
+		cfg: cfg, auth: auth, ksc: ks.NewClient(auth), t5key: t5.Key(cfg.HouseWord), ann: t5.NewAnnouncements(cfg.HouseWord), log: log,
 		kiosks: map[string]*kioskTwin{}, echos: map[string]*echoTwin{}, calls: map[string]*session{}, ports: map[string]int{},
 	}
 }
