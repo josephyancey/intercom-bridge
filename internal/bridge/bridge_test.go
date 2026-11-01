@@ -69,12 +69,12 @@ type fakeKiosk struct {
 	admin    *httptest.Server
 	endpoint *httptest.Server
 
-	mu        sync.Mutex
-	lastCall  ks.CallRequest
+	mu         sync.Mutex
+	lastCall   ks.CallRequest
 	callStatus string
-	actions   chan string
-	calls     chan ks.CallRequest
-	sockets   chan *websocket.Conn
+	actions    chan string
+	calls      chan ks.CallRequest
+	sockets    chan *websocket.Conn
 }
 
 func newFakeKiosk(t *testing.T) *fakeKiosk {

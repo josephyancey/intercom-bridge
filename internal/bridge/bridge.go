@@ -117,9 +117,9 @@ func (b *Bridge) Run(ctx context.Context) {
 
 func (b *Bridge) scan(ctx context.Context) {
 	var (
-		wg       sync.WaitGroup
-		kiosks   []discover.Kiosk
-		echos    []discover.Echo
+		wg         sync.WaitGroup
+		kiosks     []discover.Kiosk
+		echos      []discover.Echo
 		kErr, eErr error
 	)
 	wg.Add(2)
@@ -384,12 +384,12 @@ func (b *Bridge) fail(format string, args ...any) {
 
 // Status is what the status page shows.
 type Status struct {
-	Version   string        `json:"version"`
-	Kiosks    []StatusTwin  `json:"kiosks"`
-	Echos     []StatusTwin  `json:"echos"`
-	Calls     []StatusCall  `json:"calls"`
-	LastError string        `json:"last_error,omitempty"`
-	LastAt    *time.Time    `json:"last_error_at,omitempty"`
+	Version   string       `json:"version"`
+	Kiosks    []StatusTwin `json:"kiosks"`
+	Echos     []StatusTwin `json:"echos"`
+	Calls     []StatusCall `json:"calls"`
+	LastError string       `json:"last_error,omitempty"`
+	LastAt    *time.Time   `json:"last_error_at,omitempty"`
 }
 
 type StatusTwin struct {

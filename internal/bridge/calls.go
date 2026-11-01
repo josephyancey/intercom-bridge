@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	ringFor      = 30 * time.Second // an Echo rings this long; a kiosk caller is told "missed" after it
-	socketWait   = 10 * time.Second // after an answer, how long the kiosk has to open the audio socket
-	requestFor   = 4 * time.Second
-	wayToEcho    = "kiosk to Echo"
-	wayToKiosk   = "Echo to kiosk"
+	ringFor    = 30 * time.Second // an Echo rings this long; a kiosk caller is told "missed" after it
+	socketWait = 10 * time.Second // after an answer, how long the kiosk has to open the audio socket
+	requestFor = 4 * time.Second
+	wayToEcho  = "kiosk to Echo"
+	wayToKiosk = "Echo to kiosk"
 )
 
 // session is one call through the bridge, identified by its Kiosk Satellite call id.
@@ -38,9 +38,9 @@ type session struct {
 	endpoint   int    // its call port, read from identity
 	fromID     string // the stand-in kiosk this call is signed as
 
-	signals chan string          // the kiosk's words: answer, decline, missed, cancel, hangup
-	sockets chan *websocket.Conn // the audio socket a calling kiosk opens
-	started time.Time
+	signals  chan string          // the kiosk's words: answer, decline, missed, cancel, hangup
+	sockets  chan *websocket.Conn // the audio socket a calling kiosk opens
+	started  time.Time
 	answered atomic.Bool
 }
 
@@ -74,7 +74,9 @@ type standinCalls struct {
 	t *echoTwin
 }
 
-func (c *standinCalls) Ring(req ks.CallRequest, remote string) string { return c.b.kioskCallsEcho(c.t, req, remote) }
+func (c *standinCalls) Ring(req ks.CallRequest, remote string) string {
+	return c.b.kioskCallsEcho(c.t, req, remote)
+}
 
 func (c *standinCalls) Signal(call, action string) bool {
 	s := c.b.call(call)

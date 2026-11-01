@@ -68,7 +68,9 @@ func NewClient(auth *Auth) *Client {
 	return &Client{auth: auth, http: &http.Client{Timeout: 4 * time.Second}, cache: map[string]cachedIdentity{}}
 }
 
-func base(host string, port int) string { return "http://" + net.JoinHostPort(host, strconv.Itoa(port)) }
+func base(host string, port int) string {
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(port))
+}
 
 // Identity reads a kiosk's identity from its admin port. Kiosks answer one request a second per
 // client, so a copy younger than that is reused.
