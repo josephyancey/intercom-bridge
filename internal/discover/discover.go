@@ -171,3 +171,36 @@ func AdvertiseEcho(name string, port int, ip string, ifaces []net.Interface) (*z
 	return zeroconf.RegisterProxy(Label(name), echoService, domain, port, Label("t5b-"+name), []string{ip},
 		[]string{"name=" + name}, ifaces)
 }
+
+const bridgeService = "_intercom-bridge._tcp"
+
+// Bridge is an intercom bridge as it advertises itself while it runs: the Docker bridge or the
+// Kiosk Satellite plugin. Port is its status page.
+type Bridge struct {
+	ID      string
+	Address string
+	Port    int
+}
+
+// Bridges lists the bridges that advertise themselves within look.
+func Bridges(ctx context.Context, look time.Duration, ifaces []net.Interface) ([]Bridge, error) {
+	entries, err := browse(ctx, bridgeService, look, ifaces)
+	if err != nil {
+		return nil, err
+	}
+	var out []Bridge
+	for _, e := range entries {
+		id, addr := txt(e, "id"), address(e)
+		if id == "" || addr == "" {
+			continue
+		}
+		out = append(out, Bridge{ID: id, Address: addr, Port: e.Port})
+	}
+	return out, nil
+}
+
+// AdvertiseBridge announces that this bridge runs, with its id and since when, on its status port.
+func AdvertiseBridge(id string, since int64, version string, port int, ip string, ifaces []net.Interface) (*zeroconf.Server, error) {
+	text := []string{"id=" + id, "since=" + strconv.FormatInt(since, 10), "version=" + version}
+	return zeroconf.RegisterProxy("intercom-bridge-"+id, bridgeService, domain, port, "ibr-"+id, []string{ip}, text, ifaces)
+}

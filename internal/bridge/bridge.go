@@ -94,10 +94,12 @@ type Bridge struct {
 
 func New(cfg Config, log *slog.Logger) *Bridge {
 	auth := ks.NewAuth(cfg.IntercomKey)
-	return &Bridge{
+	b := &Bridge{
 		cfg: cfg, auth: auth, ksc: ks.NewClient(auth), t5key: t5.Key(cfg.HouseWord), ann: t5.NewAnnouncements(cfg.HouseWord), log: log,
 		kiosks: map[string]*kioskTwin{}, echos: map[string]*echoTwin{}, calls: map[string]*session{}, ports: map[string]int{},
 	}
+	b.loadState()
+	return b
 }
 
 // StandinID is the stand-in kiosk id for an Echo: 16 hex digits that stay the same across restarts
@@ -109,7 +111,6 @@ func StandinID(echoName string) string {
 
 // Run looks for devices every BrowseEvery until ctx ends, then takes every stand-in down.
 func (b *Bridge) Run(ctx context.Context) {
-	b.loadState()
 	for {
 		b.scan(ctx)
 		select {

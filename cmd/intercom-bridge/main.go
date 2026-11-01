@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,13 +39,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	b := bridge.New(cfg, log)
+	r := bridge.NewRunner(cfg, log, bridgeID(filepath.Dir(cfg.StateFile)), statusPort)
 	if statusPort > 0 {
-		go serveStatus(statusPort, b, log)
+		go serveStatus(statusPort, r, log)
 	}
 	log.Info("intercom bridge starting", "version", version, "advertise", cfg.Advertise,
 		"ports", fmt.Sprintf("%d-%d", cfg.PortLow, cfg.PortHigh), "status_port", statusPort)
-	b.Run(ctx)
+	r.Run(ctx)
 	log.Info("intercom bridge stopped")
 }
 
@@ -242,7 +244,23 @@ func discoverOnly() int {
 	return 0
 }
 
-func serveStatus(port int, b *bridge.Bridge, log *slog.Logger) {
+// bridgeID is this bridge's id, kept in dir so it stays the same across restarts.
+func bridgeID(dir string) string {
+	path := filepath.Join(dir, "bridge-id")
+	if raw, err := os.ReadFile(path); err == nil {
+		if id := strings.TrimSpace(string(raw)); len(id) == 16 {
+			return id
+		}
+	}
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	id := hex.EncodeToString(b)
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(path, []byte(id+"\n"), 0o644)
+	return id
+}
+
+func serveStatus(port int, b *bridge.Runner, log *slog.Logger) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

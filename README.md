@@ -103,8 +103,20 @@ Within a minute the log shows each kiosk and TECHO5 device it found. Open **Call
 the TECHO5 devices are listed there. On a TECHO5 device, the kiosks are on the call page, and
 "call the kitchen" works by voice.
 
-The status page is at `http://<bridge>:8790/status`: the devices found, their stand-in ports, calls in
-progress and the last error.
+The status page is at `http://<bridge>:8790/status`: whether this bridge is the one running, the
+devices found, their stand-in ports, calls in progress and the last error.
+
+## More than one bridge
+
+Only one bridge runs on a network at a time. A running bridge advertises itself over mDNS
+(`_intercom-bridge._tcp`), and a bridge that finds another one running stands by, then looks again
+every `BROWSE_INTERVAL`. When the running one stops, a standby takes over within a minute or so;
+the stand-ins keep their ids, so kiosks see the same devices at a new address. If two start at
+once, the one that started first keeps running.
+
+That makes a spare safe: run the container on two machines, or run it beside the
+[Kiosk Satellite plugin](https://github.com/josephyancey/intercom-bridge-plugin), which does the
+same. Each needs its status port reachable, since that is how the others tell it is still running.
 
 ## Settings
 
@@ -118,7 +130,7 @@ Everything is set with environment variables.
 | `MDNS_INTERFACE` | all | Limit mDNS to one network interface, like `eth0`. Also picks the default `ADVERTISE_ADDRESS`. |
 | `LISTEN_ADDRESS` | all | The address stand-ins listen on. |
 | `PORT_RANGE` | `41000-41099` | Ports for stand-ins, one per device. Kiosks and TECHO5 devices connect to these. |
-| `STATUS_PORT` | `8790` | The status page. `0` turns it off. |
+| `STATUS_PORT` | `8790` | The status page, which other bridges also check. `0` turns it off, and then other bridges cannot tell this one runs. |
 | `STATE_DIR` | `/data` | Where the bridge keeps each stand-in's port, so they stay the same across restarts. |
 | `NAME_SUFFIX` | none | Added to TECHO5 device names in the kiosks' list, like ` (Echo)`. |
 | `BROWSE_INTERVAL` | `30s` | How often the bridge looks for devices. |
