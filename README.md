@@ -74,8 +74,11 @@ Everything is set with environment variables.
 | `STATUS_PORT` | `8790` | The status page. `0` turns it off. |
 | `STATE_DIR` | `/data` | Where the bridge keeps each stand-in's port, so they stay the same across restarts. |
 | `NAME_SUFFIX` | none | Added to TECHO5 device names in the kiosks' list, like ` (Echo)`. |
-| `BROWSE_INTERVAL` | `30s` | How often the bridge looks for devices. One that misses three looks is dropped. |
+| `BROWSE_INTERVAL` | `30s` | How often the bridge looks for devices. |
+| `FORGET_AFTER` | `10m` | A device not heard from for this long loses its stand-in. Some tablets answer mDNS only now and then. |
 | `MAX_CALL` | `2h` | The longest a call through the bridge may last. |
+| `SILENCE_HANGUP` | `0` (off) | End a call once neither side has said anything for this long, like `15s`. |
+| `SILENCE_LEVEL_DB` | `-55` | What counts as quiet for `SILENCE_HANGUP`, in dBFS. Raise it (`-45`) if a noisy room keeps calls up; lower it (`-65`) if calls end while people are talking quietly. |
 | `GAIN_TO_ECHO_DB` | `0` | Gain on the kiosk's voice going to the TECHO5 device, in dB. |
 | `GAIN_TO_KIOSK_DB` | `0` | Gain on the TECHO5 device's voice going to the kiosk, in dB. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
@@ -127,8 +130,10 @@ Tested against:
 
 | | Version |
 |---|---|
-| Kiosk Satellite | not yet tested on hardware |
-| TECHO5 | not yet tested on hardware |
+| Kiosk Satellite | 2026.10.40 and 2026.10.45 (Meta Portal, Fire tablets, Echo Show 5 on LineageOS) |
+| TECHO5 | TECHO5-Dot v1.0.45 on an Echo 2nd gen (radar) |
+
+Calls placed and answered both ways, with audio both ways and hangup from either end.
 
 The protocols are implemented from Kiosk Satellite's documentation, from
 [Kiosk Phone](https://github.com/mpjanofsky/kiosk-phone)'s verified protocol notes, and from TECHO5's

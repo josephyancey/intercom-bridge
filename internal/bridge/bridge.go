@@ -42,11 +42,16 @@ type Config struct {
 	Ifaces      []net.Interface
 	BrowseEvery time.Duration
 	BrowseFor   time.Duration
+	ForgetAfter time.Duration // a device unheard this long loses its stand-in
 	MaxCall     time.Duration
-	ToEchoDB    float64
-	ToKioskDB   float64
-	Version     string
-	NoAdvertise bool // tests: serve stand-ins without announcing them
+	// SilenceHangup ends a call once neither side has sent anything louder than QuietDBFS for this
+	// long. Zero leaves calls up however quiet they are.
+	SilenceHangup time.Duration
+	QuietDBFS     float64
+	ToEchoDB      float64
+	ToKioskDB     float64
+	Version       string
+	NoAdvertise   bool // tests: serve stand-ins without announcing them
 }
 
 // kioskTwin is a real kiosk and the stand-in TECHO5 device the Echos call it through.
@@ -136,7 +141,7 @@ func (b *Bridge) scan(ctx context.Context) {
 	} else {
 		b.SetEchos(echos)
 	}
-	b.forget(time.Now().Add(-(3*b.cfg.BrowseEvery + b.cfg.BrowseFor)))
+	b.forget(time.Now().Add(-b.cfg.ForgetAfter))
 }
 
 // SetKiosks takes in the kiosks one look found. Stand-ins of our own are left out.

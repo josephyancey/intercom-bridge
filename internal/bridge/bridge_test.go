@@ -302,6 +302,55 @@ func TestKioskCallsEcho(t *testing.T) {
 	waitFor(t, l.Gone, "the Echo to be hung up on")
 }
 
+func TestSilenceHangsUp(t *testing.T) {
+	b := newTestBridge(t)
+	b.cfg.SilenceHangup = 1500 * time.Millisecond
+	b.cfg.QuietDBFS = -55
+	kiosk := newFakeKiosk(t)
+	echo := newFakeEcho(t, t5.MsgRinging, t5.MsgAnswer)
+	b.SetEchos([]discover.Echo{echo.discovered(t, "Garage Echo")})
+	port := standinPort(t, b.Status().Echos, "Garage Echo")
+	_, adminPort := hostPort(t, kiosk.admin.Listener.Addr().String())
+	call := "quiet-1"
+	code, out := kiosk.post("http://127.0.0.1:"+strconv.Itoa(port)+"/api/intercom/call", call, map[string]any{
+		"call": call, "kind": "call", "from": map[string]any{"id": kioskID, "name": "Kitchen", "address": "127.0.0.1", "port": adminPort},
+	})
+	if code != http.StatusOK || out["status"] != "ringing" {
+		t.Fatalf("call answered %d %v", code, out)
+	}
+	l := waitFor(t, echo.links, "the Echo to answer")
+	waitFor(t, kiosk.actions, "the answer")
+	wsURL := url.URL{Scheme: "ws", Host: "127.0.0.1:" + strconv.Itoa(port), Path: "/api/intercom/audio/" + call,
+		RawQuery: url.Values{"token": {kiosk.auth.Token(call, kioskID)}}.Encode()}
+	ws, _, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+
+	// A quiet hiss from the kiosk (about -66 dBFS) does not count as talking.
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(80 * time.Millisecond):
+				_ = ws.WriteMessage(websocket.BinaryMessage, frameOf(ks.FrameBytes, 15))
+			}
+		}
+	}()
+	started := time.Now()
+	waitFor(t, l.Gone, "the silent call to be hung up")
+	if took := time.Since(started); took < time.Second {
+		t.Fatalf("hung up after %v, before the silence had lasted", took)
+	}
+	if a := waitFor(t, kiosk.actions, "hangup"); a != "hangup" {
+		t.Fatalf("the kiosk was told %q", a)
+	}
+}
+
 func TestKioskCallsBusyEcho(t *testing.T) {
 	b := newTestBridge(t)
 	kiosk := newFakeKiosk(t)

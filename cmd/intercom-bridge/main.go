@@ -19,12 +19,16 @@ import (
 	"time"
 
 	"intercom-bridge/internal/bridge"
+	"intercom-bridge/internal/discover"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "discover" {
+		os.Exit(discoverOnly())
+	}
 	cfg, statusPort, log, err := configure()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "intercom-bridge:", err)
@@ -98,6 +102,18 @@ func configure() (bridge.Config, int, *slog.Logger, error) {
 	if err != nil || maxCall <= 0 {
 		return bridge.Config{}, 0, nil, errors.New("MAX_CALL must be a duration, like 2h")
 	}
+	forget, err := time.ParseDuration(env("FORGET_AFTER", "10m"))
+	if err != nil || forget < 2*every {
+		return bridge.Config{}, 0, nil, errors.New("FORGET_AFTER must be a duration of at least two BROWSE_INTERVALs, like 10m")
+	}
+	silence, err := time.ParseDuration(env("SILENCE_HANGUP", "0s"))
+	if err != nil || silence < 0 {
+		return bridge.Config{}, 0, nil, errors.New("SILENCE_HANGUP must be a duration, like 15s, or 0 for off")
+	}
+	quiet, err := strconv.ParseFloat(env("SILENCE_LEVEL_DB", "-55"), 64)
+	if err != nil || quiet >= 0 {
+		return bridge.Config{}, 0, nil, errors.New("SILENCE_LEVEL_DB must be a negative number of dB, like -55")
+	}
 	toEcho, err := strconv.ParseFloat(env("GAIN_TO_ECHO_DB", "0"), 64)
 	if err != nil {
 		return bridge.Config{}, 0, nil, fmt.Errorf("GAIN_TO_ECHO_DB: %w", err)
@@ -114,7 +130,8 @@ func configure() (bridge.Config, int, *slog.Logger, error) {
 		StateFile:   filepath.Join(env("STATE_DIR", "/data"), "state.json"),
 		NameSuffix:  env("NAME_SUFFIX", ""),
 		Ifaces:      ifaces,
-		BrowseEvery: every, BrowseFor: 3 * time.Second, MaxCall: maxCall,
+		BrowseEvery: every, BrowseFor: 3 * time.Second, ForgetAfter: forget, MaxCall: maxCall,
+		SilenceHangup: silence, QuietDBFS: quiet,
 		ToEchoDB: toEcho, ToKioskDB: toKiosk,
 		Version: version,
 	}
@@ -180,6 +197,49 @@ func guessAddress(ifaceName string) (string, error) {
 	}
 	defer c.Close()
 	return c.LocalAddr().(*net.UDPAddr).IP.String(), nil
+}
+
+// discoverOnly lists the kiosks and TECHO5 devices this machine can hear, without advertising
+// anything or needing the secrets: a check that the network lets the bridge see both sides.
+func discoverOnly() int {
+	var ifaces []net.Interface
+	if name := env("MDNS_INTERFACE", ""); name != "" {
+		ifc, err := net.InterfaceByName(name)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "MDNS_INTERFACE:", err)
+			return 2
+		}
+		ifaces = []net.Interface{*ifc}
+	}
+	ctx := context.Background()
+	look := 5 * time.Second
+	fmt.Println("Looking for 5 seconds...")
+	kiosks, kerr := discover.Kiosks(ctx, look, ifaces)
+	echos, eerr := discover.Echos(ctx, look, ifaces)
+	fmt.Println("\nKiosk Satellite kiosks:")
+	if kerr != nil {
+		fmt.Println("  error:", kerr)
+	}
+	for _, k := range kiosks {
+		fmt.Printf("  %-28s %s:%d  id %s  version %s\n", k.Name, k.Address, k.AdminPort, k.ID, k.Version)
+	}
+	if len(kiosks) == 0 && kerr == nil {
+		fmt.Println("  none heard")
+	}
+	fmt.Println("\nTECHO5 devices:")
+	if eerr != nil {
+		fmt.Println("  error:", eerr)
+	}
+	for _, e := range echos {
+		fmt.Printf("  %-28s %s:%d\n", e.Name, e.Address, e.Port)
+	}
+	if len(echos) == 0 && eerr == nil {
+		fmt.Println("  none heard")
+	}
+	if len(kiosks) == 0 || len(echos) == 0 {
+		return 1
+	}
+	return 0
 }
 
 func serveStatus(port int, b *bridge.Bridge, log *slog.Logger) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -41,15 +42,33 @@ type relay struct {
 	ws      *websocket.Conn
 	wsMu    sync.Mutex // one writer at a time on the socket
 
+	// heardAt is when either side last sent audio above quietLevel, as Unix nanoseconds: what a
+	// silence hangup measures from.
+	heardAt    atomic.Int64
+	quietLevel float64 // RMS, at int16 scale
+
 	done    chan struct{}
 	endOnce sync.Once
 	by      string // endEcho, endKiosk or endBridge
 	why     string
 }
 
-func newRelay(link *t5.Link, toEchoDB, toKioskDB float64) *relay {
-	return &relay{link: link, toEchoGain: dbToGain(toEchoDB), toKioskGain: dbToGain(toKioskDB), done: make(chan struct{})}
+func newRelay(link *t5.Link, toEchoDB, toKioskDB, quietDBFS float64) *relay {
+	r := &relay{link: link, toEchoGain: dbToGain(toEchoDB), toKioskGain: dbToGain(toKioskDB),
+		quietLevel: math.MaxInt16 * dbToGain(quietDBFS), done: make(chan struct{})}
+	r.heardAt.Store(time.Now().UnixNano())
+	return r
 }
+
+// hear notes when a frame was louder than quiet.
+func (r *relay) hear(pcm []byte) {
+	if rms(pcm) > r.quietLevel {
+		r.heardAt.Store(time.Now().UnixNano())
+	}
+}
+
+// quietFor is how long neither side has sent anything above the quiet level.
+func (r *relay) quietFor() time.Duration { return time.Since(time.Unix(0, r.heardAt.Load())) }
 
 func dbToGain(db float64) float64 { return math.Pow(10, db/20) }
 
@@ -156,6 +175,7 @@ func (r *relay) fromEcho() {
 			r.end(endEcho, "the Echo hung up")
 			return
 		case b := <-r.link.Audio:
+			r.hear(b)
 			gathered = append(gathered, b...)
 			for len(gathered) >= ks.FrameBytes {
 				chunk := append([]byte(nil), gathered[:ks.FrameBytes]...)
@@ -184,6 +204,7 @@ func (r *relay) fromKiosk(ws *websocket.Conn) {
 			if len(data)%2 != 0 {
 				data = data[:len(data)-1]
 			}
+			r.hear(data)
 			applyGain(data, r.toEchoGain)
 			r.mu.Lock()
 			r.backlog = append(r.backlog, data...)
@@ -204,6 +225,20 @@ func (r *relay) fromKiosk(ws *websocket.Conn) {
 			// talking it stops sending, and the Echo hears the pump's silence.
 		}
 	}
+}
+
+// rms is the root mean square of 16-bit little-endian samples, at int16 scale.
+func rms(pcm []byte) float64 {
+	n := len(pcm) / 2
+	if n == 0 {
+		return 0
+	}
+	var sum float64
+	for i := 0; i+1 < len(pcm); i += 2 {
+		v := float64(int16(binary.LittleEndian.Uint16(pcm[i:])))
+		sum += v * v
+	}
+	return math.Sqrt(sum / float64(n))
 }
 
 // applyGain scales 16-bit little-endian samples in place, clipping at full scale.

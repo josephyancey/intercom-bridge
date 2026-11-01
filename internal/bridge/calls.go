@@ -231,7 +231,7 @@ wait:
 	}
 	s.answered.Store(true)
 	s.link.Talk()
-	rl := newRelay(s.link, b.cfg.ToEchoDB, b.cfg.ToKioskDB)
+	rl := newRelay(s.link, b.cfg.ToEchoDB, b.cfg.ToKioskDB, b.cfg.QuietDBFS)
 	rl.start() // the Echo hears silence until the kiosk's socket is up
 	if b.signalKiosk(s, "answer") != nil {
 		rl.close()
@@ -392,7 +392,7 @@ wait:
 		return
 	}
 	link.Talk()
-	rl := newRelay(link, b.cfg.ToEchoDB, b.cfg.ToKioskDB)
+	rl := newRelay(link, b.cfg.ToEchoDB, b.cfg.ToKioskDB, b.cfg.QuietDBFS)
 	rl.start()
 	log.Info("answered")
 	actx, acancel := context.WithTimeout(context.Background(), requestFor)
@@ -411,6 +411,8 @@ wait:
 func (b *Bridge) carry(s *session, rl *relay, log interface{ Info(string, ...any) }) {
 	limit := time.NewTimer(b.cfg.MaxCall)
 	defer limit.Stop()
+	check := time.NewTicker(time.Second)
+	defer check.Stop()
 	for done := false; !done; {
 		select {
 		case <-rl.done:
@@ -421,6 +423,10 @@ func (b *Bridge) carry(s *session, rl *relay, log interface{ Info(string, ...any
 			}
 		case <-limit.C:
 			rl.end(endBridge, "maximum call length")
+		case <-check.C:
+			if b.cfg.SilenceHangup > 0 && rl.quietFor() >= b.cfg.SilenceHangup {
+				rl.end(endBridge, "nobody spoke for "+b.cfg.SilenceHangup.String())
+			}
 		}
 	}
 	rl.close()
