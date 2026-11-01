@@ -1,0 +1,19 @@
+services:
+  intercom-bridge:
+    image: ghcr.io/josephyancey/intercom-bridge:latest
+    container_name: intercom-bridge
+    # Host networking: mDNS discovery needs multicast, and kiosks and TECHO5 devices connect to the
+    # bridge's stand-in ports directly.
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      KS_INTERCOM_KEY: ${KS_INTERCOM_KEY}
+      TECHO5_HOUSE_WORD: ${TECHO5_HOUSE_WORD}
+      ADVERTISE_ADDRESS: ${ADVERTISE_ADDRESS:-}
+      # MDNS_INTERFACE: eth0
+      # PORT_RANGE: 41000-41099
+      # STATUS_PORT: "8790"
+      # NAME_SUFFIX: " (Echo)"
+      # TZ: America/Chicago
+    volumes:
+      - ./data:/data
